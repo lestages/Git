@@ -1,0 +1,136 @@
+---
+title: "CourseProjectMLv2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+```
+```{r chunk1}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+library(knitr)
+
+set.seed(41439)
+training <- read.csv("C:/Users/IBM_ADMIN/My Documents/Personal/Classes/R_programming/Machine Learning/pml_training.csv", na.strings=c("NA","#DIV/0!",""))
+testing_final<- read.csv("C:/Users/IBM_ADMIN/My Documents/Personal/Classes/R_programming/Machine Learning/pml_testing.csv", na.strings=c("NA","#DIV/0!",""))
+
+#Breaking the main training set into smaller training and testing sets
+
+dat_for_training <- createDataPartition(training$classe, p=0.6, list=FALSE)
+training_dat <- training[dat_for_training, ]
+testing_dat <- training[-dat_for_training, ]
+dim(training_dat); dim(testing_dat)
+
+#Cleaning and prepping data for different models. Includes running the nonzerovar
+#procedure and and dropping vars with under 70% fill, as well as getting
+#the training and testing datasets to match type for var names
+
+
+nzv <- nearZeroVar(training_dat )
+training_dat <- training_dat[,-nzv]
+nzv<- nearZeroVar(testing_dat)
+testing_dat <- testing_dat[,-nzv]
+
+training_dat <- training_dat[c(-1)]
+
+training_temp <- training_dat
+for(i in 1:length(training_dat)) {
+    if( sum( is.na( training_dat[, i] ) ) /nrow(training_dat) >= .7) {
+        for(j in 1:length(training_temp)) {
+            if( length( grep(names(training_dat[i]), names(training_temp)[j]) ) == 1)  {
+                training_temp <- training_temp[ , -j]
+            }   
+        } 
+    }
+}
+
+training_dat <- training_temp
+rm(training_temp)
+
+cols1 <- colnames(training_dat)
+cols2 <- colnames(training_dat[, -58])  
+testing_dat <- testing_dat[cols1]      
+testing_final<- testing_final[cols2]             
+
+
+for (i in 1:length(testing_final) ) {
+    for(j in 1:length(training_dat)) {
+        if( length( grep(names(training_dat[i]), names(testing_final)[j]) ) == 1)  {
+            class(testing_final[j]) <- class(training_dat[i])
+        }      
+    }      
+}
+
+testing_final<- rbind(training_dat[2, -58] , testing_final)
+testing_final<- testing_final[-1,]
+
+#The following three prediction models were selected because they were
+#discussed most in class lectures
+
+#Running decision tree prediction
+set.seed(41439)
+modtree <- rpart(classe ~ ., data=training_dat, method="class")
+fancyRpartPlot(modtree)
+
+
+modtreepredict <- predict(modtree, testing_dat, type = "class")
+cmtree <- confusionMatrix(modtreepredict, testing_dat$classe)
+cmtree
+
+plot(cmtree$table, col = cmtree$byClass, main = paste("Decision Tree Confusion Matrix: Accuracy =", round(cmtree$overall['Accuracy'], 4)))
+
+
+#Running Random forest prediction
+set.seed(41439)
+modforest <- randomForest(classe ~ ., data=training_dat)
+predictionB1 <- predict(modforest, testing_dat, type = "class")
+cmrf <- confusionMatrix(predictionB1, testing_dat$classe)
+cmrf
+
+plot(modforest)
+
+plot(cmrf$table, col = cmtree$byClass, main = paste("Random Forest Confusion Matrix: Accuracy =", round(cmrf$overall['Accuracy'], 4)))
+
+
+#Running Generalized Boosted Regression
+set.seed(41439)
+fitControl <- trainControl(method = "repeatedcv",
+                           number = 5,
+                           repeats = 1)
+
+gbmFit1 <- train(classe ~ ., data=training_dat, method = "gbm",
+                 trControl = fitControl,
+                 verbose = FALSE)
+
+
+gbmFinMod1 <- gbmFit1$finalModel
+
+gbmPredTest <- predict(gbmFit1, newdata=testing_dat)
+gbmAccuracyTest <- confusionMatrix(gbmPredTest, testing_dat$classe)
+gbmAccuracyTest
+
+plot(gbmFit1, ylim=c(0.9, 1))
+
+
+#Predicting Results on the Test Data
+#Random Forests Accuracy was best at 99.89%, over the other two. The expected out-of-sample error is 100-99.89 = 0.11%.
+
+predictionB2 <- predict(modforest, testing_final, type = "class")
+predictionB2
+
+pml_write_files = function(x){
+    n = length(x)
+    for(i in 1:n){
+        filename = paste0("problem_id_",i,".txt")
+        write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+    }
+}
+
+ pml_write_files(predictionB2)
+```
+
